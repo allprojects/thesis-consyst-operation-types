@@ -108,6 +108,9 @@ with `ref()`.
 
 You need Cassandra 4.0+ to run with Java 11.
 
+To use Cassandra locally, it is best to use ccm: https://github.com/riptano/ccm
+Use `pip install ccm` to install ccm.
+
 If using ccm then use `ccm setdir` to set the correct Cassandra install directory. 
 The cassandra version is found in opt/cassandra.
 

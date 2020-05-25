@@ -5,7 +5,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 
-import com.datastax.oss.driver.api.core.CqlSession
+import com.datastax.oss.driver.api.core.{CqlSession, DriverTimeoutException}
 import com.datastax.oss.driver.api.core.`type`.codec.TypeCodecs
 import com.datastax.oss.driver.api.core.cql.{BatchStatement, BatchType}
 import com.datastax.oss.driver.api.querybuilder.QueryBuilder
@@ -84,20 +84,34 @@ trait CassandraStore extends DistributedStore
 
 
 		private def initialize(): Unit = {
-			cassandraSession.execute(s"""DROP KEYSPACE IF EXISTS $keyspaceName""")
+			try {
+				cassandraSession.execute(s"""DROP KEYSPACE IF EXISTS $keyspaceName""")
+			} catch {
+				case e : DriverTimeoutException => e.printStackTrace()
+			}
+
+			Thread.sleep(1000)
+
 			cassandraSession.execute(
-				s"""CREATE KEYSPACE $keyspaceName
+				s"""CREATE KEYSPACE IF NOT EXISTS $keyspaceName
 					 |WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor' : 3}"""
 					.stripMargin
 			)
-			cassandraSession.execute(
-				s"""CREATE TABLE IF NOT EXISTS $keyspaceName.$objectTableName (
-					 |addr text primary key,
-					 |state blob
-					 |) with comment = 'stores objects as blobs'"""
-					.stripMargin
-			)
-			Thread.sleep(100)
+
+			Thread.sleep(1000)
+
+			try {
+				cassandraSession.execute(
+					s"""CREATE TABLE IF NOT EXISTS $keyspaceName.$objectTableName (
+						 |addr text primary key,
+						 |state blob
+						 |) with comment = 'stores objects as blobs'"""
+						.stripMargin
+				)
+			} catch {
+				case e : DriverTimeoutException => e.printStackTrace()
+			}
+			Thread.sleep(1000)
 		}
 
 		private[cassandra] def writeObject[T <: Serializable](addr : String, obj : T, clevel : CLevel, timestamp : Long) : Unit = {

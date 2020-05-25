@@ -8,9 +8,6 @@ import scala.util.DynamicVariable
  * @author Mirko Köhler
  */
 object CassandraStores {
-	private val currentStore : DynamicVariable[CassandraStore] = new DynamicVariable[CassandraStore](null)
-
-
 	private[cassandra] val currentTransaction : DynamicVariable[CassandraTransactionContext] = new DynamicVariable[CassandraTransactionContext](null)
 
 	def getCurrentTransaction : CassandraTransactionContext =
