@@ -11,7 +11,7 @@ import scala.reflect.runtime.universe._
  *
  * @author Mirko Köhler
  */
-class CassandraReplicaSystem(host : String, cassandraPort : Int, zookeeperPort : Int, withTimeout : FiniteDuration = Duration(10, "s"), withInitialize : Boolean = false)  extends ReplicaSystem {
+class CassandraReplicaSystem(host : String, cassandraPort : Int, zookeeperPort : Int, withTimeout : FiniteDuration = Duration(10, "s"))  extends ReplicaSystem {
 
 	override type Obj = CassandraStore#ObjType
 	override type Addr = CassandraStore#Addr
@@ -19,7 +19,7 @@ class CassandraReplicaSystem(host : String, cassandraPort : Int, zookeeperPort :
 	override type Ref[T <: Obj] = CassandraRef[T]
 
 
-	private val store : CassandraStore = CassandraStore.fromAddress(host, cassandraPort, zookeeperPort, withTimeout, withInitialize)
+	private val store : CassandraStore = CassandraStore.fromAddress(host, cassandraPort, zookeeperPort, withTimeout)
 
 	override def name : String = store.name
 
