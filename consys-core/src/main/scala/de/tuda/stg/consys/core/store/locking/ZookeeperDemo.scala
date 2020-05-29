@@ -1,9 +1,8 @@
-package de.tuda.stg.consys.core.store.cassandra
+package de.tuda.stg.consys.core.store.locking
 
 import java.util.concurrent.CountDownLatch
 
-import org.apache.curator.framework.CuratorFrameworkFactory
-import org.apache.curator.retry.ExponentialBackoffRetry
+import de.tuda.stg.consys.core.store.cassandra.CassandraStore
 
 import scala.concurrent.duration.Duration
 

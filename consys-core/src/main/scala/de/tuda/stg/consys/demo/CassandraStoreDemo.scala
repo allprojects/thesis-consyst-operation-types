@@ -15,6 +15,9 @@ import scala.util.{Failure, Success}
  */
 object CassandraStoreDemo extends App {
 
+
+
+
 	override def main(args : Array[String]) : Unit = {
 		val store1 = CassandraStore.fromAddress("127.0.0.1", 9042, 2181, withTimeout = Duration(60, "s"))
 		val store2 = CassandraStore.fromAddress("127.0.0.2", 9042, 2182, withTimeout = Duration(60, "s"))

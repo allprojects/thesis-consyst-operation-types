@@ -1,11 +1,10 @@
-package de.tuda.stg.consys.core.store.cassandra
+package de.tuda.stg.consys.core.store.locking
 
 import java.util.concurrent.{TimeUnit, TimeoutException}
 
-import de.tuda.stg.consys.core.store.{DistributedStore, LockingStore}
 import de.tuda.stg.consys.core.store.LockingTransactionContext.DistributedLock
-import de.tuda.stg.consys.core.store.cassandra.LockingStoreExt.ZookeeperLock
-import org.apache.curator.framework.CuratorFramework
+import de.tuda.stg.consys.core.store.locking.ZookeeperLockingStoreExt.ZookeeperLock
+import de.tuda.stg.consys.core.store.{DistributedStore, LockingStore}
 import org.apache.curator.framework.recipes.locks.{InterProcessLock, InterProcessMutex}
 
 /**
@@ -13,7 +12,7 @@ import org.apache.curator.framework.recipes.locks.{InterProcessLock, InterProces
  *
  * @author Mirko Köhler
  */
-trait LockingStoreExt extends LockingStore { self : DistributedStore with ZookeeperStoreExt =>
+trait ZookeeperLockingStoreExt extends LockingStore { self : DistributedStore with ZookeeperStoreExt =>
 
 	override type LockType = ZookeeperLock
 
@@ -33,7 +32,7 @@ trait LockingStoreExt extends LockingStore { self : DistributedStore with Zookee
 
 }
 
-object LockingStoreExt {
+object ZookeeperLockingStoreExt {
 
 	class ZookeeperLock(store : DistributedStore, lock : InterProcessLock) extends DistributedLock {
 		override def acquire() : Unit = {

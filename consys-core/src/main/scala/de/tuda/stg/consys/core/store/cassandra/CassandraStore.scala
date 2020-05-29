@@ -4,17 +4,17 @@ import java.io._
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
-
 import com.datastax.oss.driver.api.core.{CqlSession, DriverTimeoutException}
 import com.datastax.oss.driver.api.core.`type`.codec.TypeCodecs
 import com.datastax.oss.driver.api.core.cql.{BatchStatement, BatchType}
 import com.datastax.oss.driver.api.core.servererrors.InvalidQueryException
 import com.datastax.oss.driver.api.querybuilder.QueryBuilder
 import de.tuda.stg.consys.core.Address
+import de.tuda.stg.consys.core.store.exceptions.ObjectNotAvailableException
+import de.tuda.stg.consys.core.store.locking.{ZookeeperLockingStoreExt, ZookeeperStoreExt}
 import de.tuda.stg.consys.core.store.{DistributedStore, LockingStore}
 import org.apache.curator.framework.{CuratorFramework, CuratorFrameworkFactory}
 import org.apache.curator.retry.ExponentialBackoffRetry
-
 import scala.concurrent.TimeoutException
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.reflect.runtime.universe.TypeTag
@@ -27,9 +27,7 @@ import scala.reflect.runtime.universe.TypeTag
  */
 trait CassandraStore extends DistributedStore
 	with ZookeeperStoreExt
-	with LockingStoreExt {
-	/* Force initialization of binding */
-	//CassandraBinding
+	with ZookeeperLockingStoreExt {
 
 	//TODO: Timeout is not used. How to integrate into Datastax driver?
 
@@ -151,8 +149,7 @@ trait CassandraStore extends DistributedStore
 		private[cassandra] def readObject[T <: Serializable : TypeTag](addr : String, clevel : CLevel) : T = {
 			import QueryBuilder._
 
-			cassandraSession.execute(s"USE $keyspaceName")
-			val query = selectFrom(s"$objectTableName")
+			val query = selectFrom(keyspaceName, objectTableName)
 				.all()
 				.whereColumn("addr").isEqualTo(literal(addr))
 				.build()
@@ -172,7 +169,7 @@ trait CassandraStore extends DistributedStore
 				Thread.sleep(200)
 			}
 
-			throw new TimeoutException(s"the object with address $addr has not been found on this replica")
+			throw ObjectNotAvailableException(addr)
 
 		}
 	}

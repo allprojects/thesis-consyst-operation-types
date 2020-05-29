@@ -1,9 +1,8 @@
 package de.tuda.stg.consys.core
 
 import java.util.Objects
-
 import de.tuda.stg.consys.core
-
+import de.tuda.stg.consys.core.store.exceptions.ObjectNotAvailableException
 import scala.language.higherKinds
 import scala.reflect.runtime.universe._
 
@@ -14,14 +13,10 @@ import scala.reflect.runtime.universe._
 	*/
 trait ReplicaSystem {
 
-	/**
-	 * Type for objects that can be stored in the store.
-	 */
+	/** Type for objects that can be stored in the store. */
 	type Obj
 
-	/**
-	 * Type of addresses for unique specifying replicated objects.
-	 */
+	/** Type of addresses for unique specifying replicated objects. */
 	type Addr
 
 	/**
@@ -30,7 +25,7 @@ trait ReplicaSystem {
 	 */
 	type Ref[T <: Obj] <: core.Ref[Addr, T]
 
-
+	/** The type of consistency levels used for this replica. */
 	type ConsistencyLevel
 
 
@@ -52,6 +47,16 @@ trait ReplicaSystem {
 
 	def replicate[T <: Obj : TypeTag](obj : T, l : ConsistencyLevel) : Ref[T]
 
+	/**
+	 * Looks up an object at the current replica.
+	 *
+	 * @param addr The address of the object to look up.
+	 * @param l The consistency level of the object.
+	 * @tparam T The type of the object.
+	 * @throws ObjectNotAvailableException if the object is not available when the timeout expires.
+	 * @return A reference to the looked up object
+	 */
+	@throws[ObjectNotAvailableException]
 	def lookup[T <: Obj : TypeTag](addr : Addr, l : ConsistencyLevel) : Ref[T]
 
 	def close() : Unit
