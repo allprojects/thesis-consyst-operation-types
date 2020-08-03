@@ -2,7 +2,7 @@ package de.tuda.stg.consys.core.store.akka
 
 import de.tuda.stg.consys.core.store.akka.AkkaObject.SyncStrategy
 import de.tuda.stg.consys.core.store.akka.AkkaTransactionContext.CachedEntry
-import de.tuda.stg.consys.core.store.{CachedTransactionContext, CommitableTransactionContext, LockingTransactionContext, TransactionContext}
+import de.tuda.stg.consys.core.store.{CachedTransactionContext, CommitableTransactionContext, LockingTransactionContext, StoreConsistencyLevel, TransactionContext}
 import scala.language.implicitConversions
 import scala.reflect.runtime.universe.TypeTag
 
@@ -30,7 +30,10 @@ case class AkkaTransactionContext(store : AkkaStore) extends TransactionContext
 
 	//TODO: Can we make this method package private?
 	override private[store] def commit() : Unit = {
-		store.AkkaBinding.mergeLocalState(timestamp, cache.toMap)
+		store.AkkaBinding.mergeWithLocalState(timestamp, cache.toMap)
+
+
+
 		//TODO: Unlock here?
 		locks.foreach(lock => lock.release())
 	}
@@ -49,6 +52,5 @@ case class AkkaTransactionContext(store : AkkaStore) extends TransactionContext
 }
 
 object AkkaTransactionContext {
-
-	case class CachedEntry[T](obj : AkkaObject[T], sync : SyncStrategy)
+	case class CachedEntry[T](obj : AkkaObject[T], level : StoreConsistencyLevel)
 }

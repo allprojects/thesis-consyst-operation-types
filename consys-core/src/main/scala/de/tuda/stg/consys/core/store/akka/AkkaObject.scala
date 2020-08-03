@@ -12,6 +12,8 @@ private[akka] abstract class AkkaObject[T <: java.io.Serializable : TypeTag] ext
   def invoke[R](methodId : String, args : Seq[Seq[Any]]) : R = {
     ReflectiveAccess.doInvoke(methodId, args)
   }
+
+
 }
 
 private[akka] object AkkaObject {

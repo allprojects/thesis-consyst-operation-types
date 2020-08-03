@@ -41,8 +41,7 @@ case object Strong extends StoreConsistencyLevel {
 	) extends AkkaObject[T] {
 		override def consistencyLevel : StoreConsistencyLevel { type StoreType = AkkaStore } = Strong
 
-		override def writeToStore(store : CassandraStore) : Unit =
-			store.CassandraBinding.writeObject(addr, state, CLevel.ALL, txContext.timestamp)
+
 	}
 
 }
