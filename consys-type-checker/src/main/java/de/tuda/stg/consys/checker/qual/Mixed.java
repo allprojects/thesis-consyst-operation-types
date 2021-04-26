@@ -7,8 +7,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+@SubtypeOf({Inconsistent.class})
 @Target({ElementType.TYPE_USE})
 @Retention(RetentionPolicy.RUNTIME)
-@SubtypeOf({Inconsistent.class})
-public @interface Mixed {
-}
+public @interface Mixed {}

@@ -1,23 +1,23 @@
 package de.tuda.stg.consys.core.store.cassandra
 
+import com.datastax.oss.driver.api.core.`type`.codec.TypeCodecs
+import com.datastax.oss.driver.api.core.cql.{ResultSet, SimpleStatement, Statement}
+import com.datastax.oss.driver.api.core.{CqlSession, ConsistencyLevel => CassandraLevel}
+import com.datastax.oss.driver.api.querybuilder.QueryBuilder
+import com.datastax.oss.driver.api.querybuilder.insert.Insert
+import com.datastax.oss.driver.api.querybuilder.select.Selector
+import de.tuda.stg.consys.core.store.ConsistencyLevel
+import de.tuda.stg.consys.core.store.cassandra.CassandraStore.CassandraStoreId
+import de.tuda.stg.consys.core.store.extensions.store.{DistributedStore, DistributedZookeeperLockingStore, LockingStore}
+import io.aeron.exceptions.DriverTimeoutException
 import java.io._
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
-import com.datastax.oss.driver.api.core.CqlSession
-import com.datastax.oss.driver.api.core.`type`.codec.TypeCodecs
-import com.datastax.oss.driver.api.core.cql.{BatchStatement, BatchType}
-import com.datastax.oss.driver.api.querybuilder.QueryBuilder
-import de.tuda.stg.consys.core.store.DistributedStore
-import de.tuda.stg.consys.core.store.cassandra.levels.CassandraConsistencyLevel
-import de.tuda.stg.consys.core.store.extensions.{ZookeeperLockingStoreExt, ZookeeperStoreExt}
-import io.aeron.exceptions.DriverTimeoutException
 import org.apache.curator.framework.{CuratorFramework, CuratorFrameworkFactory}
 import org.apache.curator.retry.ExponentialBackoffRetry
 import scala.concurrent.TimeoutException
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.reflect.ClassTag
-import scala.reflect.runtime.universe.TypeTag
-
 
 /**
  * Created on 10.12.19.
@@ -25,8 +25,7 @@ import scala.reflect.runtime.universe.TypeTag
  * @author Mirko Köhler
  */
 trait CassandraStore extends DistributedStore
-	with ZookeeperStoreExt
-	with ZookeeperLockingStoreExt {
+	with LockingStore {
 	/* Force initialization of binding */
 	CassandraBinding
 
@@ -37,11 +36,10 @@ trait CassandraStore extends DistributedStore
 
 	override final type TxContext = CassandraTransactionContext
 
-	override final type RawType[T <: ObjType] = CassandraObject[T]
-	override final type RefType[T <: ObjType] = CassandraHandler[T]
+	override final type HandlerType[T <: ObjType] = CassandraHandler[T]
+	override final type RefType[T <: ObjType] = CassandraRef[T]
 
-	override final type Level = CassandraConsistencyLevel
-
+	override final type Level = ConsistencyLevel[CassandraStore]
 
 
 	protected[store] val cassandraSession : CqlSession
@@ -49,12 +47,12 @@ trait CassandraStore extends DistributedStore
 	//This flag states whether the creation should initialize tables etc.
 	protected def initializing : Boolean
 
-	override def transaction[U](code : TxContext => Option[U]) : Option[U] = {
+	override def transaction[U](body : TxContext => Option[U]) : Option[U] = this.synchronized {
 		CassandraStores.currentStore.withValue(this) {
-			val tx = CassandraTransactionContext(this)
+			val tx = new CassandraTransactionContext(this)
 			CassandraStores.currentTransaction.withValue(tx) {
 				try {
-					code(tx) match {
+					body(tx) match {
 						case None => None
 						case res@Some(_) =>
 							res
@@ -74,9 +72,6 @@ trait CassandraStore extends DistributedStore
 
 	override def id : CassandraStoreId = CassandraStoreId(s"cassandra-store@${cassandraSession.getContext.getSessionName}")
 
-	override protected[store] def enref[T <: ObjType : ClassTag](obj : CassandraObject[T]) : CassandraHandler[T] =
-		new CassandraHandler[T](obj.addr, obj.consistencyLevel)
-
 
 	/**
 	 * This object is used to communicate with Cassandra, i.e. writing and reading data from keys.
@@ -89,74 +84,68 @@ trait CassandraStore extends DistributedStore
 		if (initializing) initialize()
 		cassandraSession.execute(s"USE $keyspaceName")
 
-
 		private def initialize(): Unit = {
-			//TODO: Remove try catch once it's fixed.
 			try {
-				cassandraSession.execute(s"""DROP KEYSPACE IF EXISTS $keyspaceName""")
+				cassandraSession.execute(
+					SimpleStatement.builder(s"""DROP KEYSPACE IF EXISTS $keyspaceName""")
+						.setExecutionProfileName("consys_init")
+						.build()
+				)
 			} catch {
-				//TODO: Is it a driver bug to have a timeout here?
-				case e :
-					com.datastax.oss.driver.api.core.DriverTimeoutException => println("driver timeout during init")
-					Thread.sleep(1000)
+				case e : DriverTimeoutException =>
+					e.printStackTrace()
 			}
 
 				cassandraSession.execute(
-					s"""CREATE KEYSPACE $keyspaceName
-						 |WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor' : 3}"""
-						.stripMargin
-				)
-				cassandraSession.execute(
-					s"""CREATE TABLE IF NOT EXISTS $keyspaceName.$objectTableName (
-						 |addr text primary key,
-						 |state blob
-						 |) with comment = 'stores objects as blobs'"""
-						.stripMargin
+					SimpleStatement.builder(
+						s"""CREATE KEYSPACE $keyspaceName
+								|WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor' : 3}"""
+								.stripMargin)
+						.setExecutionProfileName("consys_init")
+						.build()
 				)
 
-			Thread.sleep(100)
+			try {
+				cassandraSession.execute(
+					SimpleStatement.builder(
+						s"""CREATE TABLE $keyspaceName.$objectTableName (
+							 |addr text primary key,
+							 |state blob
+							 |) with comment = 'stores objects as blobs'"""
+							.stripMargin)
+						.setExecutionProfileName("consys_init")
+						.build()
+				)
+			} catch {
+				case e : DriverTimeoutException =>
+					e.printStackTrace()
+			}
 		}
 
-		private[cassandra] def writeObject[T <: Serializable](addr : String, obj : T, clevel : CLevel, timestamp : Long) : Unit = {
+		private[cassandra] def writeObjectStatement[T <: Serializable](addr : String, obj : T, clevel : CassandraLevel, timestamp : Option[Long] = None) : SimpleStatement = {
 			import QueryBuilder._
-
-			val query = insertInto(s"$objectTableName")
+			var builder : Insert = insertInto(s"$objectTableName")
 				.value("addr", literal(addr))
 				.value("state", literal(CassandraStore.serializeObject(obj)))
-  			.usingTimestamp(timestamp)
-				.build()
-				.setConsistencyLevel(clevel)
 
-			//TODO: Add failure handling
-			cassandraSession.execute(query)
-		}
-
-		private[cassandra] def writeObjects(objs : Iterable[(String, _)], clevel : CLevel, timestamp : Long) : Unit = {
-			import QueryBuilder._
-			val batch = BatchStatement.builder(BatchType.LOGGED)
-
-			for (obj <- objs) {
-				val query = insertInto(s"$objectTableName")
-					.value("addr", literal(obj._1))
-					.value("state", literal(CassandraStore.serializeObject(obj._2.asInstanceOf[Serializable])))
-  				.usingTimestamp(timestamp)
-					.build()
-					.setConsistencyLevel(clevel)
-
-				batch.addStatement(query)
+			timestamp match {
+				case None =>
+				case Some(time) => builder = builder.usingTimestamp(time)
 			}
 
-			//TODO: Add failure handling
-			cassandraSession.execute(batch.build().setConsistencyLevel(clevel))
+			builder.build().setConsistencyLevel(clevel)
+		}
+
+		private[cassandra] def executeStatement(statement : Statement[_]) : ResultSet = {
+			cassandraSession.execute(statement)
 		}
 
 
-		private[cassandra] def readObject[T <: Serializable : ClassTag](addr : String, clevel : CLevel) : T = {
-			import QueryBuilder._
-
-			val query = selectFrom(s"$objectTableName")
-				.all()
-				.whereColumn("addr").isEqualTo(literal(addr))
+		private[cassandra] def readObject[T <: Serializable : ClassTag](addr : String, clevel : CassandraLevel) : (T, Long) = {
+			val query = QueryBuilder.selectFrom(s"$objectTableName")
+				.columns("addr", "state")
+				.function("WRITETIME", Selector.column("state")).as("writetime")
+				.whereColumn("addr").isEqualTo(QueryBuilder.literal(addr))
 				.build()
 				.setConsistencyLevel(clevel)
 
@@ -168,10 +157,11 @@ trait CassandraStore extends DistributedStore
 				response.one() match {
 					case null =>  //the address has not been found. retry.
 					case row =>
-						return CassandraStore.deserializeObject[T](row.get("state", TypeCodecs.BLOB))
+						val obj = CassandraStore.deserializeObject[T](row.get("state", TypeCodecs.BLOB))
+						val time = row.get("writetime", TypeCodecs.BIGINT)
+						return (obj, time)
 				}
-
-				Thread.sleep(200)
+				Thread.sleep(10)
 			}
 
 			throw new TimeoutException(s"the object with address $addr has not been found on this replica")
@@ -184,6 +174,9 @@ trait CassandraStore extends DistributedStore
 
 object CassandraStore {
 
+	case class CassandraStoreId(name : String)
+
+
 	case class AddrNotAvailableException(addr : String) extends Exception(s"address <$addr> not available")
 
 	def fromAddress(host : String, cassandraPort : Int, zookeeperPort : Int, withTimeout : FiniteDuration = Duration(10, "s"), withInitialize : Boolean = false) : CassandraStore = {
@@ -193,16 +186,19 @@ object CassandraStore {
 			override val curator : CuratorFramework,
 			override val timeout : FiniteDuration,
 			override val initializing : Boolean
-    ) extends CassandraStore
+    ) extends CassandraStore with DistributedZookeeperLockingStore
 
+		val cassandraSession = CqlSession.builder()
+			.addContactPoint(InetSocketAddress.createUnresolved(host, cassandraPort))
+			.withLocalDatacenter("datacenter1")
+			.build()
+
+		val curator = CuratorFrameworkFactory
+			.newClient(s"$host:$zookeeperPort", new ExponentialBackoffRetry(250, 3))
 
 		new CassandraStoreImpl(
-			cassandraSession = CqlSession.builder()
-					.addContactPoint(InetSocketAddress.createUnresolved(host, cassandraPort))
-			    .withLocalDatacenter("datacenter1")
-					.build(),
-			curator = CuratorFrameworkFactory
-				.newClient(s"$host:$zookeeperPort", new ExponentialBackoffRetry(250, 3)),
+			cassandraSession,
+			curator,
 			timeout = withTimeout,
 			initializing = withInitialize
 		)

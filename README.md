@@ -1,118 +1,15 @@
-# Consistency Types
+# consysT
 
-Find our website at https://allprojects.github.io/consistency-types-impl/.
+consysT is a language and middleware which allows programmers to replicate data under specified consistency levels. 
+The type system ensures safe mixing of consistency levels.
 
-In replicated datastores, users have to decide between available and consistent data.
-Consistency ensures that the data is the same across all replicas, whereas availability
-ensures that the user will get an answer from the datastore even in the presence of
-network partitions. Having consistency and availability simultaneously is not possible
-as described by the famous CAP theorem: available data only provides weak consistency guarantees, and
-consistent data provides low availability.
+The language has a binding for Java. The implementation of the middleware is in Scala.
 
-However, applications often need available data to provide performance and consistency guarantees
-for critical program parts, e.g., payment. When mixing available and consistent data, developers
-have to reason about which consistency guarantees are still satisfied.  
+Find more information on our website at https://consysT-project.github.io.
 
-This project implements consistency types that help developers mix available and consistent data;
-the types are implemented as type annotations.
-The checking is done using an information flow analysis.
+## How to install?
 
-
-## Installation of the project
-
-The following instructions have been tested for *Linux Mint 19*.
-
- The project is built using Apache Maven.
-
-1. Install [Maven](https://maven.apache.org)
-2. Open a terminal in the main folder consistency-types-impl
-3. Build the complete project. Run `mvn install` in the project directory. Use `-DskipTests` to skip tests.
-
-To use consys in your project just add the Java API as a dependency:
-
-    <dependency>
-        <groupId>de.tuda.stg.consys</groupId>
-        <artifactId>consys-japi</artifactId>
-        <version>3.0.0-alpha</version>
-    </dependency>
- 
-
-
-To enable the type checker and compiler plugin, add the following to your `pom.xml`:
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArguments>
-                        <Xmaxerrs>10000</Xmaxerrs>
-                        <Xmaxwarns>10000</Xmaxwarns>
-                    </compilerArguments>
-                    <annotationProcessorPaths>
-                        <!-- path to the consys type checker -->
-                        <path>
-                            <groupId>de.tuda.stg.consys</groupId>
-                            <artifactId>consys-type-checker</artifactId>
-                            <version>3.0.0-alpha</version>
-                        </path>
-                        <!-- path to the consys javac plugin -->
-                        <path>
-                            <groupId>de.tuda.stg.consys</groupId>
-                            <artifactId>consys-compiler</artifactId>
-                            <version>3.0.0-alpha</version>
-                        </path>
-                    </annotationProcessorPaths>
-                    <annotationProcessors>
-                         <!-- Add all the checkers you want to enable here -->
-                         <annotationProcessor>de.tuda.stg.consys.checker.ConsistencyChecker</annotationProcessor>
-                    </annotationProcessors>
-                    <compilerArgs>
-                        <arg>-AprintErrorStack</arg>
-                        <!-- location of the annotated JDK, which comes from a Maven dependency -->
-                        <arg>-Xbootclasspath/p:${annotatedJdk}</arg>
-                        <!-- Uncomment the following line to turn type-checking warnings into errors. -->
-                        <!-- <arg>-Awarns</arg> -->
-                        <!-- Add the consys compiler plugin for preprocessing sources -->
-                        <arg>-Xplugin:ConsysPlugin</arg>
-                    </compilerArgs>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-
-    <dependencies>
-        <dependency>
-            <groupId>de.tuda.stg.consys</groupId>
-            <artifactId>consys-japi</artifactId>
-            <version>3.0.0-alpha</version>
-        </dependency>
-        <dependency>
-            <groupId>de.tuda.stg.consys</groupId>
-            <artifactId>consys-type-checker</artifactId>
-            <version>3.0.0-alpha</version>
-        </dependency>
-        <dependency>
-            <groupId>de.tuda.stg.consys</groupId>
-            <artifactId>consys-compiler</artifactId>
-            <version>3.0.0-alpha</version>
-        </dependency>
-    </dependencies>
-
-The type checker enables secure information flow. The compiler plugin allows to directly use operations on `JRef`
-with `ref()`.
-
-
-### Cassandra
-
-You need Cassandra 4.0+ to run with Java 11.
-
-If using ccm then use `ccm setdir` to set the correct Cassandra install directory. 
-The cassandra version is found in opt/cassandra.
-
-
-
+The project is built with Maven. Detailed instructions are found at https://consyst-project.github.io/install.html.
 
 ### IntelliJ
 
@@ -128,25 +25,52 @@ IntelliJ may be able to retrieve the correct checker by default. If it can, you 
 4. Choose `de.tu_darmstadt.consistency_types.checker.ConsistencyChecker` as annotation processor.  
 
 
-## The consistency checker
-The consistency checker module contains a checker for the [checker framework](https://checkerframework.org/). `ConsistencyChecker` can be configured as an annotation processor for the java compiler. With the java annotations `@High` and `@Low`, consistency levels can be assigned to variables. The checker ensures, that no low values can flow into a value assigned to a high variable. The default level for unannotated variables is `@Low`.  
-Example use:  
-`@High int a;`  
-`int b = 42;`  
-`// This assignment is not allowed and will throw assignment.type.incompatible at compile time.`  
-`a = b;`  
-For further examples, refer to the testcases.
+
+## External dependencies
+
+These applications have to be installed and running to correctly use the system:
+
+(For the Cassandra binding):
+* Apache Cassandra 4.0.0-alpha3
+* Zookeeper 3.5.6
+
+### Cassandra
+
+You need Cassandra 4.0+ to run with Java 11.
+
+If using ccm then use `ccm setdir` to set the correct Cassandra install directory. 
 
 
 ## Project overview
 
-* **consys-type-checker**: Implements the type annotations and the information flow analysis using the 
+* **consys-core**: Implementation of the middleware. Integrates Cassandra, Zookeeper, and/or Akka.
+  
+* **consys-japi**: Implementation of the frontend API for Java projects. Requires the consys-compiler Javac plugin.
+
+* **consys-compiler**: Javac plugin for preprocessing Java API.
+
+* **consys-type-checker**: Implementation of the type checker using the 
 Checker framework.
-    * **consys-type-checker-test**: Unit tests for checking information flow with the
-     consistency checker. (Has its own maven module, because
-    it needs to be compiled using the consistency checker as annotation processor). 
-* 
+
+* **integration-tests**: Fully integrated ConSysT project for testing and playing around.
+
+* **consys-bench**: Benchmark framework.
+
+* **demos**: Case studies and benchmarks.
+
+* **examples**: Implementation of several libraries/case studies using ConSysT.
 
 ## Students
 
-This project is based on the work of Victor Schümmer and Jesper Schlegel as part of the IMPL project WS 2017-18.
+The main developer is Mirko Köhler under supervision of Prof. Guido Salvaneschi.
+
+We thank the many developers that helped with the project:
+* PhD students
+    * Nafise Eskandani
+    * Pascal Weißenburger
+* Students
+    * Victor Schümmer and Jesper Schlegel
+    * Martin Edlund
+    * Matthias Heinrich and Julian Hindelang
+    * Pascal Osterwinter
+    * Tobias Chen and Niklas Reiche

@@ -3,8 +3,8 @@ package de.tuda.stg.consys.demo;
 import com.typesafe.config.Config;
 import de.tuda.stg.consys.bench.DistributedBenchmark;
 import de.tuda.stg.consys.bench.OutputFileResolver;
-import de.tuda.stg.consys.core.store.legacy.ConsistencyLabel;
-import de.tuda.stg.consys.japi.JConsistencyLevels;
+import de.tuda.stg.consys.core.legacy.ConsistencyLabel;
+import de.tuda.stg.consys.japi.legacy.JConsistencyLevels;
 import scala.Option;
 
 import java.util.Random;
@@ -12,7 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static de.tuda.stg.consys.japi.JConsistencyLevels.WEAK;
+import static de.tuda.stg.consys.japi.legacy.JConsistencyLevels.WEAK;
 
 /**
  * Created on 19.11.19.

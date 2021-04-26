@@ -13,15 +13,15 @@
         <module>demos</module>
         <module>consys-type-checker</module>
         <module>consys-type-checker/consys-type-checker-test</module>
-        <module>microbenchmarks</module>
         <module>consys-core</module>
         <module>integration-tests</module>
         <module>consys-japi</module>
+        <module>consys-auto-consistency-level-inferring</module>
         <module>consys-compiler</module>
         <module>consys-compiler/consys-compiler-test</module>
         <module>consys-bench</module>
-        <module>examples</module>
-        <module>experimental</module>
+        <module>legacy-examples</module>
+        <module>consys-annotations</module>
     </modules>
 
 
@@ -36,10 +36,10 @@
         <java.version>11</java.version>
         <scala.version>2.12.13</scala.version>
 
-        <akka.version>2.6.11</akka.version>
+        <akka.version>2.6.14</akka.version>
         <aeron.version>1.31.1</aeron.version>
 
-        <cassandra-driver.version>4.4.0</cassandra-driver.version>
+        <cassandra-driver.version>4.11.0</cassandra-driver.version>
 
         <zookeeper.version>3.5.6</zookeeper.version>
         <curator.version>4.2.0</curator.version>
@@ -85,7 +85,7 @@
                 <plugin>
                     <groupId>net.alchim31.maven</groupId>
                     <artifactId>scala-maven-plugin</artifactId>
-                    <version>4.4.0</version>
+                    <version>4.4.1</version>
                     <executions>
                         <execution>
                             <id>scala-compile-first</id>
