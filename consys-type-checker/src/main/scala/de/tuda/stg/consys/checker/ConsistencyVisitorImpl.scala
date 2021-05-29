@@ -4,11 +4,14 @@ import java.util
 import com.sun.source.tree._
 import SubConsistencyChecker.{StrongSubConsistencyChecker, WeakSubConsistencyChecker}
 import de.tuda.stg.consys.annotations.Transactional
+import de.tuda.stg.consys.checker.qual.Mixed
+
 import javax.lang.model.element.{AnnotationMirror, TypeElement}
 import org.checkerframework.common.basetype.BaseTypeChecker
 import org.checkerframework.framework.`type`.AnnotatedTypeMirror
 import org.checkerframework.framework.`type`.AnnotatedTypeMirror.AnnotatedDeclaredType
 import org.checkerframework.javacutil.{AnnotationUtils, TreeUtils, TypesUtils}
+
 import javax.lang.model.`type`.{DeclaredType, NoType}
 import scala.collection.convert.ImplicitConversions.`iterable AsScalaIterable`
 
@@ -21,8 +24,8 @@ class ConsistencyVisitorImpl(baseChecker : BaseTypeChecker) extends InformationF
 	import TypeFactoryUtils._
 
 	val subCheckerMap: Map[String, Class[_ <: SubConsistencyChecker]] =
-		Map("de.tuda.stg.consys.checker.qual.Strong" -> classOf[StrongSubConsistencyChecker],
-			"de.tuda.stg.consys.checker.qual.Weak" -> classOf[WeakSubConsistencyChecker])
+		Map(s"$checkerPackageName.qual.Strong" -> classOf[StrongSubConsistencyChecker],
+			s"$checkerPackageName.qual.Weak" -> classOf[WeakSubConsistencyChecker])
 
 
 	override def visitMemberSelect(node : MemberSelectTree, p : Void) : Void = {
@@ -32,10 +35,29 @@ class ConsistencyVisitorImpl(baseChecker : BaseTypeChecker) extends InformationF
 
 	}
 
+	override def processClassTree(classTree: ClassTree): Unit = {
+		println(">Class decl:  " + getQualifiedName(classTree))
+		val mixed = atypeFactory.getAnnotatedType(classTree).getAnnotation(classOf[Mixed])
+		val defaultOpLevel = if (mixed != null) AnnotationUtils.getElementValuesWithDefaults(mixed).values().head.getValue.toString else ""
+		atypeFactory.setMixedClassContext(TreeUtils.elementFromDeclaration(classTree), defaultOpLevel)
+		super.processClassTree(classTree)
+		atypeFactory.resetMixedClassContext()
+	}
+
+	def processClassTree(classTree: ClassTree, defaultOpLevel: String): Unit = {
+		println(">Class decl (noCache):  " + getQualifiedName(classTree))
+		atypeFactory.setMixedClassContext(TreeUtils.elementFromDeclaration(classTree), defaultOpLevel)
+		super.processClassTree(classTree)
+		atypeFactory.resetMixedClassContext()
+	}
+
 	/*
 		Check that implicit contexts are correct.
 	 */
 	override def visitAssignment(node : AssignmentTree, p : Void) : Void = {
+		println(s"  >Var assign:\n" +
+				s"   <$node> where ${node.getVariable} -> ${atypeFactory.getAnnotatedType(node.getVariable)}")
+
 		checkAssignment(atypeFactory.getAnnotatedType(node.getVariable), atypeFactory.getAnnotatedType(node.getExpression), node)
 		super.visitAssignment(node, p)
 	}
@@ -48,6 +70,9 @@ class ConsistencyVisitorImpl(baseChecker : BaseTypeChecker) extends InformationF
 
 
 	override def visitVariable(node : VariableTree, p : Void) : Void = {
+		println(s"  >Var decl:\n" +
+				s"   ${atypeFactory.getAnnotatedType(node)} ${node.getName}")
+
 		val initializer : ExpressionTree = node.getInitializer
 		if (initializer != null) checkAssignment(atypeFactory.getAnnotatedType(node), atypeFactory.getAnnotatedType(initializer), node)
 		super.visitVariable(node, p)
@@ -230,7 +255,7 @@ class ConsistencyVisitorImpl(baseChecker : BaseTypeChecker) extends InformationF
 		val annotations = node.getModifiers.getAnnotations
 		annotations.exists((at: AnnotationTree) => atypeFactory.getAnnotatedType(at.getAnnotationType) match {
 			case adt: AnnotatedDeclaredType =>
-				getQualifiedName(adt) == s"de.tuda.stg.consys.annotations.Transactional"
+				getQualifiedName(adt) == s"$annoPackageName.Transactional"
 			case _ =>
 				false
 		})
