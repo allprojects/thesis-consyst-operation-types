@@ -2,15 +2,14 @@ package de.tuda.stg.consys.checker
 
 import com.sun.source.tree.{AnnotationTree, AssignmentTree, ClassTree, CompoundAssignmentTree, ExpressionTree, IdentifierTree, MemberSelectTree, MethodTree, ModifiersTree, Tree, VariableTree}
 import com.sun.source.util.TreeScanner
-import de.tuda.stg.consys.checker.TypeFactoryUtils.{annoPackageName, checkerPackageName, getDefaultOp, getQualifiedName}
+import de.tuda.stg.consys.checker.TypeFactoryUtils.{getDefaultOp, getExplicitAnnotation, getQualifiedName}
 import de.tuda.stg.consys.checker.qual.{Local, Mixed, QualifierForOperation}
 import org.checkerframework.framework.`type`.AnnotatedTypeMirror.AnnotatedDeclaredType
-import org.checkerframework.framework.`type`.GenericAnnotatedTypeFactory
-import org.checkerframework.javacutil.{AnnotationBuilder, AnnotationUtils, ElementUtils, TreeUtils, TypesUtils}
+import org.checkerframework.javacutil.{AnnotationBuilder, ElementUtils, TreeUtils}
 
 import java.lang.annotation.Annotation
 import javax.lang.model.`type`.DeclaredType
-import javax.lang.model.element.{AnnotationMirror, AnnotationValue, ElementKind, TypeElement, VariableElement}
+import javax.lang.model.element.{AnnotationMirror, ElementKind, TypeElement, VariableElement}
 import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
 import scala.collection.mutable
 
@@ -20,6 +19,11 @@ class InferenceVisitor(atypeFactory: ConsistencyAnnotatedTypeFactory) extends Tr
     type InferenceTable = mutable.Map[(TypeElement, String, VariableElement), AnnotationMirror]
 
     var inferenceTable: InferenceTable = mutable.Map.empty
+
+    /**
+     * Stores each field read tree and the operation level of the method it occurs in
+     */
+    var refinementTable: mutable.Map[Tree, AnnotationMirror] = mutable.Map.empty
 
     private var annoMapping: Map[String, String] = Map.empty
 
@@ -171,14 +175,29 @@ class InferenceVisitor(atypeFactory: ConsistencyAnnotatedTypeFactory) extends Tr
         super.visitIdentifier(node, isLhs)
     }
 
-    private def processField(node: ExpressionTree, isLhs: Boolean): Unit = {
-        // TODO: check if ID belongs to this class
+    private def processField(node: ExpressionTree, isLhs: Boolean): Unit =
         (methodContext, TreeUtils.elementFromUse(node)) match {
-            case (Some(methodLevel), field: VariableElement) if field.getKind == ElementKind.FIELD =>
-                updateField(classContext.get, defaultOpLevel.get, field, methodLevel, isLhs, node)
+            case (Some(methodLevel), field: VariableElement)
+                if field.getKind == ElementKind.FIELD
+                    && ElementUtils.getAllFieldsIn(classContext.get, atypeFactory.getElementUtils).contains(field) =>
+
+                getExplicitAnnotation(atypeFactory, field) match {
+                    case Some(explicitAnnotation) if isLhs && !atypeFactory.getQualifierHierarchy.isSubtype(methodLevel, explicitAnnotation) =>
+                        atypeFactory.getChecker.reportError(node, "mixed.field.incompatible",
+                            explicitAnnotation.getAnnotationType.asElement().getSimpleName,
+                            methodLevel.getAnnotationType.asElement().getSimpleName)
+
+                    case None =>
+                        updateField(classContext.get, defaultOpLevel.get, field, methodLevel, isLhs, node)
+
+                    case _ =>
+                }
+
+                if (!isLhs) {
+                    refinementTable.update(node, methodLevel)
+                }
             case _ =>
         }
-    }
 
     private def updateField(clazz: TypeElement, defaultOp: String, field: VariableElement, annotation: AnnotationMirror, isLHS: Boolean, source: AnyRef): Unit = {
         if (field.getKind != ElementKind.FIELD)

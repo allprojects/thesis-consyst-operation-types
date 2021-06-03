@@ -11,10 +11,8 @@ import org.checkerframework.framework.type.treeannotator.ListTreeAnnotator;
 import org.checkerframework.framework.type.treeannotator.TreeAnnotator;
 import org.checkerframework.framework.type.typeannotator.ListTypeAnnotator;
 import org.checkerframework.framework.type.typeannotator.TypeAnnotator;
-import org.checkerframework.framework.util.QualifierKind;
 import org.checkerframework.framework.util.defaults.QualifierDefaults;
 import org.checkerframework.javacutil.AnnotationBuilder;
-import org.checkerframework.javacutil.Pair;
 import org.checkerframework.javacutil.TreeUtils;
 import scala.Tuple2;
 
@@ -88,9 +86,21 @@ public class ConsistencyAnnotatedTypeFactory extends BaseAnnotatedTypeFactory {
 			inferenceVisitor.visitClass((ClassTree)tree, null);
 		}
 
-		if ((tree.getKind() == Tree.Kind.IDENTIFIER || tree.getKind() == Tree.Kind.VARIABLE) &&
+		if ((tree.getKind() == Tree.Kind.IDENTIFIER || tree.getKind() == Tree.Kind.VARIABLE || tree.getKind() == Tree.Kind.MEMBER_SELECT) &&
 				TreeUtils.elementFromTree(tree).getKind() == ElementKind.FIELD) {
-			annotateField((VariableElement) TreeUtils.elementFromTree(tree), type);
+
+			var definedAnnotation = type.getAnnotationInHierarchy(TypeFactoryUtils.inconsistentAnnotation(this));
+			var inferredAnnotation = annotateField((VariableElement) TreeUtils.elementFromTree(tree), type);
+
+			if (type.hasExplicitAnnotation(definedAnnotation) && inferenceVisitor.refinementTable().get(tree).isDefined()) {
+				var opLevel = inferenceVisitor.refinementTable().get(tree).get();
+				type.replaceAnnotation(getQualifierHierarchy().leastUpperBound(opLevel, definedAnnotation));
+			} else if (inferredAnnotation != null && inferenceVisitor.refinementTable().get(tree).isDefined()) {
+				var opLevel = inferenceVisitor.refinementTable().get(tree).get();
+				type.replaceAnnotation(getQualifierHierarchy().leastUpperBound(opLevel, inferredAnnotation));
+			} else if (inferredAnnotation != null) {
+				type.replaceAnnotation(inferredAnnotation);
+			}
 		}
 	}
 
@@ -99,21 +109,28 @@ public class ConsistencyAnnotatedTypeFactory extends BaseAnnotatedTypeFactory {
 		super.addComputedTypeAnnotations(elt, type);
 
 		if (elt.getKind() == ElementKind.FIELD) {
-			annotateField((VariableElement) elt, type);
+			if (type.hasExplicitAnnotation(type.getAnnotationInHierarchy(TypeFactoryUtils.inconsistentAnnotation(this))))
+				return;
+
+			var anno = annotateField((VariableElement) elt, type);
+			if (anno != null) {
+				type.clearAnnotations();
+				type.addAnnotation(anno);
+			}
 		}
 	}
 
-	private void annotateField(VariableElement elt, AnnotatedTypeMirror type) {
+	private AnnotationMirror annotateField(VariableElement elt, AnnotatedTypeMirror type) {
 		if (elt.getSimpleName().toString().equals("this")) // TODO: also do this for "super"?
-			return;
+			return null;
 		if (mixedClassContext.empty())
-			return;
+			return null;
 
 		var annotation = inferenceVisitor.getInferredFieldOrFromSuperclass(elt, mixedClassContext.peek()._1, mixedClassContext.peek()._2)._1;
 		if (annotation.isDefined()) {
-			type.clearAnnotations();
-			type.addAnnotation(annotation.get());
+			return annotation.get();
 		}
+		return null;
 	}
 
 	public void setMixedClassContext(TypeElement mixedClassContext, String defaultOpLevel) {
