@@ -1,9 +1,16 @@
+package de.tuda.stg.consys.invariants;
+
 import org.eclipse.jdt.core.compiler.CompilationProgress;
+import org.eclipse.jdt.core.compiler.batch.BatchCompiler;
+import org.eclipse.jdt.internal.compiler.Compiler;
+import org.eclipse.jdt.internal.compiler.DefaultErrorHandlingPolicies;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
+import org.eclipse.jdt.internal.compiler.impl.CompilerOptions;
+import org.eclipse.jdt.internal.compiler.problem.DefaultProblemFactory;
 import org.jmlspecs.jml4.ast.JmlTypeDeclaration;
-import subset.Z3Checker;
-import subset.visitors.ModelGenerator;
-import subset.z3_model.InternalClass;
+import de.tuda.stg.consys.invariants.subset.Z3Checker;
+import de.tuda.stg.consys.invariants.subset.visitors.ModelGenerator;
+import de.tuda.stg.consys.invariants.subset.z3_model.InternalClass;
 
 import java.io.PrintWriter;
 import java.nio.file.Path;
@@ -29,18 +36,21 @@ public class Main {
   public static TypeDeclaration[] classDeclarations = null;
 
   private static void loadLib(String libname) {
-    Path lib = Paths.get("consys-auto-consistency-level-inferring","lib",libname).toAbsolutePath();
+    Path lib; // = Paths.get("consys-auto-consistency-level-inferring","lib",libname).toAbsolutePath();
+
+    String osname = System.getProperty("os.name").toLowerCase();
+    if (osname.contains("mac"))
+      lib = Paths.get("lib", libname).toAbsolutePath();
+    else if (osname.contains("linux"))
+      lib = Paths.get("consys-auto-consistency-level-inferring","lib",libname).toAbsolutePath();
+    else
+      throw new RuntimeException("Unsupported OS: " + osname);
+
     System.out.println("load " + libname + ": " + lib);
     Runtime.getRuntime().load(lib.toString());
   }
 
-  /**
-   * Starting point of program
-   *
-   * @param args used provide the path to the java file
-   */
-  public static void main(String[] args) {
-
+  public static void loadLibs() {
     // Load z3 libraries from lib folder
     String osname = System.getProperty("os.name").toLowerCase();
     // Load the correct libs depending on OS
@@ -53,12 +63,23 @@ public class Main {
     } else {
       throw new RuntimeException("Unsupported OS: " + osname);
     }
+  }
+
+  /**
+   * Starting point of program
+   *
+   * @param args used provide the path to the java file
+   */
+  public static void main(String[] args) {
+    loadLibs();
 
     // Set the source file
-    Path sourcePath = Paths.get("consys-auto-consistency-level-inferring", "src", "main", "resources", "test", "Counter.java");
+    Path sourcePath = Paths.get("consys-auto-consistency-level-inferring/InvariantExamples/BankAccountCRDT/BankAccountCRDT.java");
+//    Path sourcePath = Paths.get("consys-auto-consistency-level-inferring/InvariantExamples/cards/BankAccount/BankAccount.java");
     System.out.println("compiling: " + sourcePath.toString());
 
 
+    // Compiler imported from jml_compiler.jar
     // compile Java + JML using JML4 compiler plugin
     org.eclipse.jdt.internal.compiler.batch.Main compilerStarter =
         new org.eclipse.jdt.internal.compiler.batch.Main(

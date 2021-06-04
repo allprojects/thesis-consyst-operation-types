@@ -1,10 +1,11 @@
+import de.tuda.stg.consys.invariants.Main;
 import org.eclipse.jdt.core.compiler.CompilationProgress;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
 import org.jmlspecs.jml4.ast.JmlTypeDeclaration;
 import org.junit.jupiter.api.Test;
-import subset.Z3Checker;
-import subset.visitors.ModelGenerator;
-import subset.z3_model.InternalClass;
+import de.tuda.stg.consys.invariants.subset.Z3Checker;
+import de.tuda.stg.consys.invariants.subset.visitors.ModelGenerator;
+import de.tuda.stg.consys.invariants.subset.z3_model.InternalClass;
 
 import java.io.PrintWriter;
 import java.util.List;
@@ -15,6 +16,9 @@ import java.util.Map;
 // For environment variables
 
 public class TestOutput {
+    static {
+        Main.loadLibs();
+    }
 
     org.eclipse.jdt.internal.compiler.batch.Main compilerStarter =
             new org.eclipse.jdt.internal.compiler.batch.Main(
@@ -31,9 +35,12 @@ public class TestOutput {
     String[] distributedLock = {"src/main/resources/test/DistributedLock.java"};
     String[] resettableCounter = {"src/main/resources/test/ResettableCounter.java"};
     String[] resettableCounterWithRound = {"src/main/resources/test/ResettableCounterWithRound.java"};
-    String[] any = {"src/main/resources/test/BankAccount.java"};
+    //String[] any = {"src/main/resources/test/BankAccount.java"};
+    String[] any = {"InvariantExamples/BankAccountCRDT/BankAccountCRDT.java"};
+    //String[] any = {"InvariantExamples/BankAccount/BankAccount.java"};
 
     ModelGenerator visitor = new ModelGenerator();
+
 
 
 
@@ -292,7 +299,7 @@ public class TestOutput {
         InternalClass result = visitor.getResult();
         visitor.reset();
 
-        Z3Checker.modelPrint = false;
+        //Z3Checker.modelPrint = false;
         System.out.println("initial state: " + Z3Checker.checkInitialState(result));
         System.out.println("merge idempotency: " + Z3Checker.checkMergeIdempotency(result));
         System.out.println("merge commutativity: " + Z3Checker.checkMergeCommutativity(result));

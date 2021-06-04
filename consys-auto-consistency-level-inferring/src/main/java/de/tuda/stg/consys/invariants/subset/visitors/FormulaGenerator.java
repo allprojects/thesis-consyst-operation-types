@@ -1,20 +1,27 @@
-package subset.visitors;
+package de.tuda.stg.consys.invariants.subset.visitors;
 
 import com.microsoft.z3.*;
+import de.tuda.stg.consys.invariants.exceptions.UnsupportedJMLExpression;
+import de.tuda.stg.consys.invariants.exceptions.WrongJMLArgumentsExpression;
+import de.tuda.stg.consys.invariants.subset.Z3Checker;
+import de.tuda.stg.consys.invariants.subset.z3_model.InternalArray;
+import de.tuda.stg.consys.invariants.subset.z3_model.InternalScope;
+import de.tuda.stg.consys.invariants.subset.z3_model.InternalVar;
 import org.eclipse.jdt.internal.compiler.ast.*;
 import org.jmlspecs.jml4.ast.*;
-import subset.Z3Checker;
-import subset.z3_model.InternalArray;
-import subset.z3_model.InternalScope;
-import subset.z3_model.InternalVar;
 
-import java.util.*;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
  * This visitor class is used to translate JML expressions, local variable declarations and
  * assignable clauses to Z3 expressions
  */
+@SuppressWarnings("rawtypes")
 public class FormulaGenerator {
   Context context = Z3Checker.context;
   /**
@@ -30,27 +37,24 @@ public class FormulaGenerator {
    * @return the corresponding Z3 expression
    */
   public Expr visitExpression(Expression expression, InternalScope scope) {
-    // "\result" is the result reference
-    if (expression instanceof JmlResultReference) return scope.getCurrentReturnVariable();
 
-    // literals can be translated directly
-    if (expression instanceof IntLiteral) return context.mkInt(((IntLiteral) expression).value);
-    if (expression instanceof DoubleLiteral) {
-      double value = ((DoubleLiteral) expression).constant.doubleValue();
-      return context.mkFPToReal(context.mkFP(value, context.mkFPSortDouble()));
-    }
-    if (expression instanceof TrueLiteral) return context.mkTrue();
-    if (expression instanceof FalseLiteral) return context.mkFalse();
+    if (expression == null)
+      throw new NullPointerException("expression was null");
 
-    // expressions like addition, modulo, and, or, ...
-    if (expression instanceof BinaryExpression) {
-      return visitBinaryExpression((BinaryExpression) expression, scope);
+
+    // literal expression: 10, -5.6, true, ...
+    if (expression instanceof Literal) {
+      return visitLiteralExpression((Literal) expression, scope);
     }
+
 
     // one reference of a variable: "a"
     if (expression instanceof JmlSingleNameReference) {
       return visitJmlSingleReference((JmlSingleNameReference) expression, scope);
     }
+
+    // \result is the result reference
+    if (expression instanceof JmlResultReference) return scope.getCurrentReturnVariable();
 
     // "\old(...)"
     if (expression instanceof JmlOldExpression) {
@@ -76,7 +80,56 @@ public class FormulaGenerator {
     if (expression instanceof JmlMessageSend) {
       return visitJmlMessageSend((JmlMessageSend) expression, scope);
     }
-    return null;
+
+    // expressions with operators: a + b, a ? b : c, !a ...
+    if (expression instanceof OperatorExpression) {
+      return visitOperatorExpression((OperatorExpression) expression, scope);
+    }
+
+    throw new UnsupportedJMLExpression(expression);
+  }
+
+  public Expr visitLiteralExpression(org.eclipse.jdt.internal.compiler.ast.Literal literalExpression, InternalScope scope) {
+    // literals can be translated directly
+    if (literalExpression instanceof IntLiteral)
+      return context.mkInt(((IntLiteral) literalExpression).value);
+
+    if (literalExpression instanceof DoubleLiteral) {
+      double value = ((DoubleLiteral) literalExpression).constant.doubleValue();
+      return context.mkFPToReal(context.mkFP(value, context.mkFPSortDouble()));
+    }
+
+    if (literalExpression instanceof TrueLiteral)
+      return context.mkTrue();
+
+    if (literalExpression instanceof FalseLiteral)
+      return context.mkFalse();
+
+    throw new UnsupportedJMLExpression(literalExpression);
+  }
+
+  public Expr visitOperatorExpression(OperatorExpression operatorExpression, InternalScope scope) {
+    // !a ...
+    if (operatorExpression instanceof UnaryExpression) {
+      return visitUnaryExpression((UnaryExpression) operatorExpression, scope);
+    }
+
+    // expressions like addition, modulo, and, or, ...
+    if (operatorExpression instanceof BinaryExpression) {
+      return visitBinaryExpression((BinaryExpression) operatorExpression, scope);
+    }
+
+    if (operatorExpression instanceof ConditionalExpression) {
+      return visitConditionalExpression((ConditionalExpression) operatorExpression, scope);
+    }
+
+    throw new UnsupportedJMLExpression(operatorExpression);
+  }
+
+  public Expr visitUnaryExpression(UnaryExpression unaryExpression, InternalScope scope) {
+    Expr expr = visitExpression(unaryExpression.expression, scope);
+
+    throw new UnsupportedJMLExpression(unaryExpression);
   }
 
   /**
@@ -92,17 +145,24 @@ public class FormulaGenerator {
 
     // get operator value and construct corresponding Z3 expression
     String s = binaryExpression.operatorToString();
-    if ((s.equals("&&") || s.equals("&"))
-        && left instanceof BoolExpr
-        && right instanceof BoolExpr) {
-      return context.mkAnd((BoolExpr) left, (BoolExpr) right);
+
+
+
+    if (s.equals("&&") || s.equals("&")) {
+      if (left instanceof BoolExpr && right instanceof BoolExpr) {
+        return context.mkAnd((BoolExpr) left, (BoolExpr) right);
+      }
+      throw new WrongJMLArgumentsExpression(binaryExpression);
     }
 
-    if ((s.equals("||") || s.equals("|"))
-        && left instanceof BoolExpr
-        && right instanceof BoolExpr) {
-      return context.mkOr((BoolExpr) left, (BoolExpr) right);
+    if (s.equals("||") || s.equals("|")) {
+      if (left instanceof BoolExpr && right instanceof BoolExpr) {
+        return context.mkOr((BoolExpr) left, (BoolExpr) right);
+      }
+      throw new WrongJMLArgumentsExpression(binaryExpression);
     }
+
+    //TODO: Add WrongJMLArgumentsExpression to all cases
     if (s.equals("<") && left instanceof ArithExpr && right instanceof ArithExpr) {
       return context.mkLt((ArithExpr) left, (ArithExpr) right);
     }
@@ -164,7 +224,8 @@ public class FormulaGenerator {
 
     if (left != null && right != null && (s.equals("<=!=>") || s.equals("!=")))
       return context.mkNot(context.mkEq(left, right));
-    return null;
+
+    throw new UnsupportedJMLExpression(binaryExpression);
   }
 
   /**
@@ -183,7 +244,8 @@ public class FormulaGenerator {
       return scope.getClassVariable(variableName).getNewValue();
     else if (scope.getLocalVariables().containsKey(variableName))
       return scope.getLocalVariable(variableName);
-    return null;
+
+    throw new WrongJMLArgumentsExpression(jmlSingleNameReference);
   }
 
   /**
@@ -218,6 +280,21 @@ public class FormulaGenerator {
 
     // substitute all occurrences of poststate variables with the prestate ones
     return subExpr.substitute(newVars, oldVars);
+  }
+
+  public Expr visitConditionalExpression(ConditionalExpression conditionalExpression, InternalScope scope) {
+    Expr cond = visitExpression(conditionalExpression.condition, scope);
+    Expr thenBranch = visitExpression(conditionalExpression.valueIfTrue, scope);
+    Expr elseBranch = visitExpression(conditionalExpression.valueIfFalse, scope);
+
+    if (cond instanceof BoolExpr) {
+      BoolExpr condBool = (BoolExpr) cond;
+
+      return context.mkITE(condBool, thenBranch, elseBranch);
+    }
+
+    throw new WrongJMLArgumentsExpression(conditionalExpression);
+
   }
 
   /**
@@ -255,7 +332,8 @@ public class FormulaGenerator {
         return context.mkString(className);
       }
     }
-    return null;
+
+    throw new WrongJMLArgumentsExpression(jmlQualifiedNameReference);
   }
 
   /**
@@ -272,7 +350,7 @@ public class FormulaGenerator {
       return context.mkSelect((ArrayExpr) array, index);
     }
 
-    return null;
+    throw new WrongJMLArgumentsExpression(jmlArrayReference);
   }
 
   /**
@@ -284,6 +362,7 @@ public class FormulaGenerator {
    */
   public Expr visitJmlQuantifiedExpression(
       JmlQuantifiedExpression jmlQuantifiedExpression, InternalScope scope) {
+
     // boundVariables declaration: introduce new local scope
     Map<String, Expr> newLocalVars = new HashMap<>(scope.getLocalVariables());
     Expr[] boundConstants = new Expr[jmlQuantifiedExpression.boundVariables.length];
@@ -308,52 +387,126 @@ public class FormulaGenerator {
     Expr rangeExpr = visitExpression(jmlQuantifiedExpression.range, newLocalScope);
     Expr bodyExpr = visitExpression(jmlQuantifiedExpression.body, newLocalScope);
 
+    //quantifier operator as string
+    String quantifier = jmlQuantifiedExpression.quantifier.lexeme;
+
     // this applies to \forall and \exists expressions
-    if (rangeExpr instanceof BoolExpr && bodyExpr instanceof BoolExpr) {
-      // range ==> body
-      BoolExpr finalBodyExpr = context.mkImplies((BoolExpr) rangeExpr, (BoolExpr) bodyExpr);
+    if (quantifier.equals(JmlQuantifier.EXISTS) || quantifier.equals(JmlQuantifier.FORALL)) {
 
-      // quantifier: forall or exists
-      Expr quantifiedExpr =
-          context.mkQuantifier(
-              jmlQuantifiedExpression.quantifier.lexeme.equalsIgnoreCase("\\forall"),
-              boundConstants,
-              finalBodyExpr,
-              1,
-              null,
-              null,
-              context.mkSymbol("Q_" + quantifierCounter),
-              context.mkSymbol("Sk_" + quantifierCounter));
+      if (rangeExpr instanceof  BoolExpr && bodyExpr instanceof BoolExpr) {
+        // range ==> body
+        BoolExpr finalBodyExpr = context.mkImplies((BoolExpr) rangeExpr, (BoolExpr) bodyExpr);
 
-      // increment for future quantifiers
-      quantifierCounter++;
+        boolean isForall = quantifier.equals(JmlQuantifier.FORALL);
 
-      return quantifiedExpr;
+        // quantifier: forall or exists
+        Expr quantifiedExpr =
+                context.mkQuantifier(
+                        isForall, //decide whether to create forall or exists quantifier
+                        boundConstants,
+                        finalBodyExpr,
+                        1,
+                        null,
+                        null,
+                        context.mkSymbol("Q_" + quantifierCounter),
+                        context.mkSymbol("Sk_" + quantifierCounter));
+
+        // increment for future quantifiers
+        quantifierCounter++;
+
+        return quantifiedExpr;
+      }
+
+      throw new WrongJMLArgumentsExpression(jmlQuantifiedExpression);
     }
 
     // this applies to \sum expressions
-    if (rangeExpr instanceof BoolExpr
-        && bodyExpr instanceof ArithExpr
-        && jmlQuantifiedExpression.quantifier.lexeme.equalsIgnoreCase("\\sum")) {
-      // \sum int b; b>=0 && b<10; \old(incs[b])
-      // only support whole array expressions as of now
-      // get array and internalArray instance and call combine with ADD
-      if (bodyExpr.isSelect()) {
-        ArrayExpr selectedArray = (ArrayExpr) bodyExpr.getArgs()[0];
-        // name is something like old_array, new_array or other_array
-        String name =
-            selectedArray.toString().substring(selectedArray.toString().lastIndexOf("_") + 1);
-        if (scope.getClassVariable(name) instanceof InternalArray) {
-          InternalArray arr = (InternalArray) scope.getClassVariable(name);
-          return arr.combineValues(
-              InternalArray.Combiner.ADDITION,
-              selectedArray,
-              ((ArraySort) arr.getSort()).getRange().getSortKind());
+    if (quantifier.equals(JmlQuantifier.SUM)) {
+      if (rangeExpr instanceof BoolExpr && bodyExpr instanceof ArithExpr) {
+
+        // whole array expressions as of now
+        // \sum int b; b>=0 && b<10; \old(incs[b])
+        // get array and internalArray instance and call combine with ADD
+        if (bodyExpr.isSelect()) {
+          ArrayExpr selectedArray = (ArrayExpr) bodyExpr.getArgs()[0];
+          // name is something like old_array, new_array or other_array
+          String name =
+                  selectedArray.toString().substring(selectedArray.toString().lastIndexOf("_") + 1);
+          if (scope.getClassVariable(name) instanceof InternalArray) {
+            InternalArray arr = (InternalArray) scope.getClassVariable(name);
+
+            return arr.combineValues(
+                    InternalArray.Combiner.ADDITION,
+                    selectedArray,
+                    ((ArraySort) arr.getSort()).getRange().getSortKind());
+          }
+        } else {
+          //The general case for summation
+          // NOTE: Summation always (!) start at i = 0, and increase i in every step by 1.
+          System.err.println("Warning! \\sum only supports sums starting at 0.");
+
+//          ctx = Context()
+//          symSum = RecFunction('symSum', IntSort(ctx), IntSort(ctx), IntSort(ctx))
+//          a = Int('a',ctx)
+//          b = Int('b',ctx)
+//          RecAddDefinition(symSum, [a,b], If(a > b, 0, a + symSum(a+1,b)))
+//          x = Int('x',ctx)
+//
+//          s = Solver(ctx=ctx)
+//          s.add(symSum(1,5) == x)
+//          print(s.check())
+//          print(s.model())
+
+          if (jmlQuantifiedExpression.boundVariables.length != 1) {
+            throw new WrongJMLArgumentsExpression(jmlQuantifiedExpression);
+          }
+
+
+          FuncDecl sumFunc = context.mkRecFuncDecl(
+                  context.mkSymbol("$SUM_" + quantifierCounter),
+                  new Sort[] { context.getIntSort() },
+                  bodyExpr.getSort()
+          );
+
+
+          // increment for future quantifiers
+          quantifierCounter++;
+
+          Expr indexVar = boundConstants[0];
+
+          /* Build body. Example:
+            \sum int i; i >= 0 && i <= size; arr[i] * 2
+            -->
+            sumFunc(int i) { if (i >= 0 && i <= size) then (arr[i] * 2) + sumFunc(i + 1) else 0 }
+           */
+          Expr sumBody =
+                  context.mkITE(rangeExpr, // if (i in range)
+                          // then
+                          context.mkAdd(
+                                  // body + sumFunc(i + 1)
+                                  bodyExpr,
+                                  context.mkApp(sumFunc, context.mkAdd(indexVar, context.mkInt(1)))
+                          ),
+                          // else
+                          context.mkInt(0)
+                          );
+
+          // Create the func def
+          context.AddRecDef(sumFunc, boundConstants, sumBody);
+
+          // Apply sumFunc to 0 and return as expression
+          Expr result = context.mkApp(sumFunc, context.mkInt(0));
+
+          return result;
         }
+
+
       }
+
+      throw new WrongJMLArgumentsExpression(jmlQuantifiedExpression);
     }
 
-    return null;
+    throw new UnsupportedJMLExpression(jmlQuantifiedExpression);
   }
 
   /**
@@ -387,7 +540,7 @@ public class FormulaGenerator {
       }
     }
 
-    return null;
+    throw new WrongJMLArgumentsExpression(jmlMessageSend);
   }
 
   /*
@@ -410,7 +563,7 @@ public class FormulaGenerator {
       return context.mkConst(String.valueOf(localDeclaration.name) + quantifierCounter, type);
     }
 
-    return null;
+    throw new IllegalArgumentException(localDeclaration.toString());
   }
 
   /**
@@ -523,6 +676,6 @@ public class FormulaGenerator {
       return resultingPostCondition;
     }
 
-    return null;
+    throw new IllegalArgumentException(jmlAssignableClause.toString());
   }
 }
